@@ -818,7 +818,9 @@ impl WinampApp {
     // MARQUEE DISPLAY
     // ==========================================
     fn render_marquee(&mut self, painter: &Painter, rect: Rect) {
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(4, 8, 4));
+        let clipped_painter = painter.with_clip_rect(rect);
+        clipped_painter.rect_filled(rect, 0.0, Color32::from_rgb(4, 8, 4));
+        draw_bevel(&clipped_painter, rect, true);
 
         let current_track = self.engine.current_index.and_then(|idx| self.engine.playlist.get(idx));
         let title = current_track
@@ -826,20 +828,15 @@ impl WinampApp {
             .unwrap_or_else(|| "WINAMP (PROUDLY IN RUST) - IT REALLY WHIPS THE LLAMA'S ASS ***".to_string());
 
         let font = FontId::monospace(10.0);
-        let text_width = title.len() as f32 * 6.2;
-        let total_cycle = text_width + rect.width();
+        let galley = clipped_painter.layout_no_wrap(title, font, COLOR_LED_GREEN);
+        let text_width = galley.size().x;
+        let total_cycle = (text_width + rect.width()).max(1.0);
 
         let offset = self.marquee_offset % total_cycle;
         let x = rect.max.x - offset;
+        let y = rect.center().y - galley.size().y * 0.5;
 
-        // Clip text to marquee bounding box
-        painter.text(
-            Pos2::new(x, rect.center().y),
-            Align2::LEFT_CENTER,
-            &title,
-            font,
-            COLOR_LED_GREEN,
-        );
+        clipped_painter.galley(Pos2::new(x, y), galley, COLOR_LED_GREEN);
     }
 
     // ==========================================
