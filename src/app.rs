@@ -146,8 +146,7 @@ impl WinampApp {
                     if let Some(ref path) = file.path {
                         let idx = self.engine.add_file(path);
                         if let Some(track_idx) = idx {
-                            self.engine.current_index = Some(track_idx);
-                            self.engine.play();
+                            self.engine.play_index(track_idx);
                         }
                     }
                 }
@@ -208,8 +207,7 @@ impl WinampApp {
                 }
             }
             if let Some(idx) = first_new_idx {
-                self.engine.current_index = Some(idx);
-                self.engine.play();
+                self.engine.play_index(idx);
             }
         }
     }
@@ -1308,13 +1306,17 @@ impl WinampApp {
                 text_color,
             );
 
-            let resp = ui.interact(row_rect, Id::new(format!("pl_row_{}", view_i)), Sense::click());
+            let resp = ui.interact(row_rect, Id::new(("pl_row", idx)), Sense::click());
             if resp.clicked() {
                 self.selected_playlist_idx = Some(idx);
             }
             if resp.double_clicked() {
                 play_track_idx = Some(idx);
             }
+        }
+
+        if let Some(idx) = play_track_idx {
+            self.engine.play_index(idx);
         }
 
         // Classic Winamp Vertical Scrollbar
@@ -1360,11 +1362,6 @@ impl WinampApp {
                     self.playlist_scroll = (click_frac * max_scroll as f32).round() as usize;
                 }
             }
-        }
-
-        if let Some(idx) = play_track_idx {
-            self.engine.current_index = Some(idx);
-            self.engine.play();
         }
 
         // Playlist Bottom Action Buttons

@@ -180,6 +180,13 @@ impl AudioEngine {
         }
     }
 
+    pub fn play_index(&mut self, idx: usize) {
+        if idx < self.playlist.len() {
+            self.current_index = Some(idx);
+            self.start_track(idx, 0.0);
+        }
+    }
+
     pub fn pause(&mut self) {
         if self.state == PlaybackState::Playing {
             if let Some(ref sink) = self.sink {
