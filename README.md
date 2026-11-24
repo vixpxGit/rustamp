@@ -6,6 +6,9 @@ An authentic, high-performance Winamp 2.x clone built in Rust for Windows 11. It
 
 ![WinampR for Windows 11](assets/winampr-player.png)
 
+### Fullscreen / Pop-out Visualizer
+![WinampR Fullscreen Visualizer](assets/winampr-visualizer.png)
+
 ---
 
 ## 🚀 Quick Start

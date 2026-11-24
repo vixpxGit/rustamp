@@ -23,6 +23,7 @@ pub struct WinampApp {
     pub eq_preset_name: String,
     last_save: std::time::Instant,
     screenshot_path: Option<String>,
+    screenshot_vis_path: Option<String>,
     screenshot_frames: u32,
 }
 
@@ -44,8 +45,13 @@ impl WinampApp {
             .windows(2)
             .find(|w| w[0] == "--screenshot")
             .map(|w| w[1].clone());
+        let screenshot_vis_path = args
+            .windows(2)
+            .find(|w| w[0] == "--screenshot-vis")
+            .map(|w| w[1].clone());
+        let is_shot = screenshot_path.is_some() || screenshot_vis_path.is_some();
 
-        if screenshot_path.is_none() {
+        if !is_shot {
             if let Some(saved) = storage::load_state() {
                 engine.set_volume(saved.volume);
                 engine.set_balance(saved.balance);
@@ -106,12 +112,13 @@ impl WinampApp {
             eq_preset_name,
             last_save: std::time::Instant::now(),
             screenshot_path,
+            screenshot_vis_path,
             screenshot_frames: 0,
         }
     }
 
     pub fn save_persisted_state(&self) {
-        if self.screenshot_path.is_some() {
+        if self.screenshot_path.is_some() || self.screenshot_vis_path.is_some() {
             return;
         }
         let (eq_enabled, eq_preamp_db, eq_bands_db) = if let Ok(eq) = self.engine.eq_state.lock() {
@@ -252,24 +259,57 @@ impl eframe::App for WinampApp {
         style.visuals.window_fill = COLOR_BG;
         ctx.set_style(style);
 
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(COLOR_BG))
-            .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+        if self.screenshot_vis_path.is_some() {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none().fill(Color32::from_rgb(5, 7, 5)))
+                .show(ctx, |ui| {
+                    let full_rect = ui.max_rect();
+                    let painter = ui.painter_at(full_rect);
+                    self.draw_visualizer_canvas(&painter, full_rect, true);
+                    let track_label = self
+                        .engine
+                        .current_index
+                        .and_then(|idx| self.engine.playlist.get(idx))
+                        .map(|t| {
+                            let secs = self.engine.elapsed_secs as u32;
+                            format!("{}  [{:02}:{:02}]", t.title, secs / 60, secs % 60)
+                        })
+                        .unwrap_or_else(|| "WINAMP R VISUALIZER".to_string());
+                    painter.text(
+                        full_rect.min + Vec2::new(14.0, 12.0),
+                        Align2::LEFT_TOP,
+                        track_label,
+                        FontId::monospace(12.0),
+                        Color32::from_rgba_unmultiplied(0, 235, 30, 180),
+                    );
+                    painter.text(
+                        Pos2::new(full_rect.max.x - 14.0, full_rect.min.y + 12.0),
+                        Align2::RIGHT_TOP,
+                        "SPECTRUM  |  DBL-CLICK / ESC: EXIT FULLSCREEN  |  R-CLICK: MODE",
+                        FontId::monospace(10.5),
+                        Color32::from_rgba_unmultiplied(130, 165, 135, 170),
+                    );
+                });
+        } else {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none().fill(COLOR_BG))
+                .show(ctx, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
 
-                // 1. MAIN PLAYER WINDOW
-                self.render_main_window(ui);
+                    // 1. MAIN PLAYER WINDOW
+                    self.render_main_window(ui);
 
-                // 2. EQUALIZER WINDOW (if open)
-                if self.show_eq && !self.windowshade {
-                    self.render_eq_window(ui);
-                }
+                    // 2. EQUALIZER WINDOW (if open)
+                    if self.show_eq && !self.windowshade {
+                        self.render_eq_window(ui);
+                    }
 
-                // 3. PLAYLIST WINDOW (if open)
-                if self.show_playlist && !self.windowshade {
-                    self.render_playlist_window(ui);
-                }
-            });
+                    // 3. PLAYLIST WINDOW (if open)
+                    if self.show_playlist && !self.windowshade {
+                        self.render_playlist_window(ui);
+                    }
+                });
+        }
 
         // 4. SEPARATE LARGE / FULLSCREEN VISUALIZER WINDOW
         if self.show_vis_window {
@@ -282,8 +322,12 @@ impl eframe::App for WinampApp {
             self.last_save = std::time::Instant::now();
         }
 
-        // Optional automated screenshot capture (--screenshot <path.bmp>)
-        if let Some(ref shot_path) = self.screenshot_path.clone() {
+        // Optional automated screenshot capture (--screenshot or --screenshot-vis <path.bmp>)
+        let active_shot = self
+            .screenshot_path
+            .clone()
+            .or_else(|| self.screenshot_vis_path.clone());
+        if let Some(shot_path) = active_shot {
             self.screenshot_frames += 1;
             if self.screenshot_frames == 35 {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
@@ -297,32 +341,7 @@ impl eframe::App for WinampApp {
                 }
             });
             if let Some(img) = captured {
-                let w = img.width() as u32;
-                let h = img.height() as u32;
-                let pixel_bytes = w * h * 4;
-                let file_size = 54 + pixel_bytes;
-                let mut bmp = Vec::with_capacity(file_size as usize);
-                // BMP header (14 bytes)
-                bmp.extend_from_slice(b"BM");
-                bmp.extend_from_slice(&file_size.to_le_bytes());
-                bmp.extend_from_slice(&0u32.to_le_bytes());
-                bmp.extend_from_slice(&54u32.to_le_bytes());
-                // DIB header (40 bytes)
-                bmp.extend_from_slice(&40u32.to_le_bytes());
-                bmp.extend_from_slice(&(w as i32).to_le_bytes());
-                bmp.extend_from_slice(&(-(h as i32)).to_le_bytes()); // top-down
-                bmp.extend_from_slice(&1u16.to_le_bytes());
-                bmp.extend_from_slice(&32u16.to_le_bytes());
-                bmp.extend_from_slice(&0u32.to_le_bytes());
-                bmp.extend_from_slice(&pixel_bytes.to_le_bytes());
-                bmp.extend_from_slice(&0i32.to_le_bytes());
-                bmp.extend_from_slice(&0i32.to_le_bytes());
-                bmp.extend_from_slice(&0u32.to_le_bytes());
-                bmp.extend_from_slice(&0u32.to_le_bytes());
-                for c in &img.pixels {
-                    bmp.extend_from_slice(&[c.b(), c.g(), c.r(), c.a()]);
-                }
-                let _ = std::fs::write(shot_path, bmp);
+                write_color_image_bmp(&shot_path, &img);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -1505,4 +1524,31 @@ impl WinampApp {
             COLOR_LED_GREEN,
         );
     }
+}
+
+fn write_color_image_bmp(path: &str, img: &egui::ColorImage) {
+    let w = img.width() as u32;
+    let h = img.height() as u32;
+    let pixel_bytes = w * h * 4;
+    let file_size = 54 + pixel_bytes;
+    let mut bmp = Vec::with_capacity(file_size as usize);
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&file_size.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&54u32.to_le_bytes());
+    bmp.extend_from_slice(&40u32.to_le_bytes());
+    bmp.extend_from_slice(&(w as i32).to_le_bytes());
+    bmp.extend_from_slice(&(-(h as i32)).to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes());
+    bmp.extend_from_slice(&32u16.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&pixel_bytes.to_le_bytes());
+    bmp.extend_from_slice(&0i32.to_le_bytes());
+    bmp.extend_from_slice(&0i32.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    for c in &img.pixels {
+        bmp.extend_from_slice(&[c.b(), c.g(), c.r(), c.a()]);
+    }
+    let _ = std::fs::write(path, bmp);
 }
