@@ -1281,8 +1281,9 @@ impl WinampApp {
     // 3. PLAYLIST EDITOR WINDOW
     // ==========================================
     fn render_playlist_window(&mut self, ui: &mut Ui) {
+        let playlist_h = ui.available_height().max(168.0);
         let (rect, _response) = ui.allocate_exact_size(
-            Vec2::new(ui.available_width(), 168.0),
+            Vec2::new(ui.available_width(), playlist_h),
             Sense::hover(),
         );
 
@@ -1294,10 +1295,11 @@ impl WinampApp {
         let title_rect = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(rect.width() - 4.0, 16.0));
         self.render_titlebar(&painter, title_rect, "WINAMP PLAYLIST", false);
 
-        // Playlist Table Area (LCD-style list)
+        // Playlist Table Area (LCD-style list, auto-expands with window height)
+        let list_h = (rect.height() - 54.0).max(114.0);
         let list_rect = Rect::from_min_size(
             rect.min + Vec2::new(8.0, 22.0),
-            Vec2::new(rect.width() - 16.0, 114.0),
+            Vec2::new(rect.width() - 16.0, list_h),
         );
         painter.rect_filled(list_rect, 0.0, COLOR_LCD_BG);
         draw_bevel(&painter, list_rect, true);
@@ -1446,9 +1448,9 @@ impl WinampApp {
             }
         }
 
-        // Playlist Bottom Action Buttons
+        // Playlist Bottom Action Buttons (pinned to bottom of playlist panel)
         let bottom_rect = Rect::from_min_size(
-            rect.min + Vec2::new(8.0, 140.0),
+            Pos2::new(rect.min.x + 8.0, rect.max.y - 28.0),
             Vec2::new(rect.width() - 16.0, 22.0),
         );
 
