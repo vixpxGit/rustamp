@@ -92,3 +92,8 @@ cargo run --release
 
 ## 🎧 Built-In Demo Sound Generator
 Even without local audio files on hand, Winamp comes with two built-in retro synthesized tracks (`Llama Whippin' Intro` with 90s funky FM bass, chiptune lead, kick and snare; and `90s Neon Chiptune`) so you can test audio and watch the spectrum analyzer bounce immediately!
+
+---
+
+## 🤖 Built with Google Antigravity
+This project — from the Rust audio engine and 10-band biquad equalizer to the WinampR UI, custom icon, and Windows 11 release — was built completely using **Google Antigravity**.
