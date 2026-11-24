@@ -14,16 +14,25 @@ use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
     let is_vis_shot = std::env::args().any(|a| a == "--screenshot-vis");
-    let initial_size = if is_vis_shot {
-        Vec2::new(960.0, 540.0)
+    let (initial_size, min_size, max_size) = if is_vis_shot {
+        (
+            Vec2::new(960.0, 540.0),
+            Vec2::new(320.0, 200.0),
+            Vec2::new(4000.0, 4000.0),
+        )
     } else {
-        Vec2::new(420.0, 500.0)
+        (
+            Vec2::new(420.0, 500.0),
+            Vec2::new(420.0, 160.0),
+            Vec2::new(420.0, 4000.0),
+        )
     };
 
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size(initial_size)
-            .with_min_inner_size(Vec2::new(380.0, 160.0))
+            .with_min_inner_size(min_size)
+            .with_max_inner_size(max_size)
             .with_title("WinampR - It really whips the llama's ass!")
             .with_icon(Arc::new(icon::build_window_icon()))
             .with_resizable(true),
