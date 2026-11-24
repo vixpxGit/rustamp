@@ -4,6 +4,8 @@
 
 An authentic, high-performance Winamp 2.x clone built in Rust for Windows 11. It features the classic metallic brushed chassis, 7-segment green digital clock, real-time 19-band FFT spectrum analyzer with peak gravity decay, CRT oscilloscope, 10-band equalizer with presets, and an interactive playlist manager.
 
+![WinampR for Windows 11](assets/winampr-player.png)
+
 ---
 
 ## 🚀 Quick Start

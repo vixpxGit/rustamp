@@ -22,6 +22,8 @@ pub struct WinampApp {
     pub playlist_scroll: usize,
     pub eq_preset_name: String,
     last_save: std::time::Instant,
+    screenshot_path: Option<String>,
+    screenshot_frames: u32,
 }
 
 impl WinampApp {
@@ -37,41 +39,55 @@ impl WinampApp {
         let mut eq_preset_name = "Flat".to_string();
         let mut selected_playlist_idx = Some(0);
 
-        if let Some(saved) = storage::load_state() {
-            engine.set_volume(saved.volume);
-            engine.set_balance(saved.balance);
-            engine.shuffle = saved.shuffle;
-            engine.repeat = saved.repeat;
+        let args: Vec<String> = std::env::args().collect();
+        let screenshot_path = args
+            .windows(2)
+            .find(|w| w[0] == "--screenshot")
+            .map(|w| w[1].clone());
 
-            show_eq = saved.show_eq;
-            show_playlist = saved.show_playlist;
-            windowshade = saved.windowshade;
-            remaining_time_mode = saved.remaining_time_mode;
-            visualizer.mode = saved.vis_mode;
-            eq_preset_name = saved.eq_preset_name;
+        if screenshot_path.is_none() {
+            if let Some(saved) = storage::load_state() {
+                engine.set_volume(saved.volume);
+                engine.set_balance(saved.balance);
+                engine.shuffle = saved.shuffle;
+                engine.repeat = saved.repeat;
 
+                show_eq = saved.show_eq;
+                show_playlist = saved.show_playlist;
+                windowshade = saved.windowshade;
+                remaining_time_mode = saved.remaining_time_mode;
+                visualizer.mode = saved.vis_mode;
+                eq_preset_name = saved.eq_preset_name;
+
+                if let Ok(mut eq) = engine.eq_state.lock() {
+                    eq.enabled = saved.eq_enabled;
+                    eq.preamp_db = saved.eq_preamp_db;
+                    eq.bands_db = saved.eq_bands_db;
+                }
+
+                // Restore saved playlist (keep demo tracks and existing files)
+                let valid_tracks: Vec<_> = saved
+                    .playlist
+                    .into_iter()
+                    .filter(|t| t.is_demo || t.path.as_ref().map(|p| p.exists()).unwrap_or(false))
+                    .collect();
+
+                if !valid_tracks.is_empty() {
+                    engine.playlist = valid_tracks;
+                    let idx = saved
+                        .current_index
+                        .filter(|&i| i < engine.playlist.len())
+                        .or(Some(0));
+                    engine.current_index = idx;
+                    selected_playlist_idx = idx;
+                }
+            }
+        } else {
+            eq_preset_name = "Rock".to_string();
             if let Ok(mut eq) = engine.eq_state.lock() {
-                eq.enabled = saved.eq_enabled;
-                eq.preamp_db = saved.eq_preamp_db;
-                eq.bands_db = saved.eq_bands_db;
+                eq.bands_db = [4.8, 3.2, -1.5, -2.5, -1.0, 1.5, 4.0, 5.5, 6.0, 6.5];
             }
-
-            // Restore saved playlist (keep demo tracks and existing files)
-            let valid_tracks: Vec<_> = saved
-                .playlist
-                .into_iter()
-                .filter(|t| t.is_demo || t.path.as_ref().map(|p| p.exists()).unwrap_or(false))
-                .collect();
-
-            if !valid_tracks.is_empty() {
-                engine.playlist = valid_tracks;
-                let idx = saved
-                    .current_index
-                    .filter(|&i| i < engine.playlist.len())
-                    .or(Some(0));
-                engine.current_index = idx;
-                selected_playlist_idx = idx;
-            }
+            engine.play_index(0);
         }
 
         Self {
@@ -89,10 +105,15 @@ impl WinampApp {
             playlist_scroll: 0,
             eq_preset_name,
             last_save: std::time::Instant::now(),
+            screenshot_path,
+            screenshot_frames: 0,
         }
     }
 
     pub fn save_persisted_state(&self) {
+        if self.screenshot_path.is_some() {
+            return;
+        }
         let (eq_enabled, eq_preamp_db, eq_bands_db) = if let Ok(eq) = self.engine.eq_state.lock() {
             (eq.enabled, eq.preamp_db, eq.bands_db)
         } else {
@@ -259,6 +280,51 @@ impl eframe::App for WinampApp {
         if self.last_save.elapsed().as_secs() >= 3 {
             self.save_persisted_state();
             self.last_save = std::time::Instant::now();
+        }
+
+        // Optional automated screenshot capture (--screenshot <path.bmp>)
+        if let Some(ref shot_path) = self.screenshot_path.clone() {
+            self.screenshot_frames += 1;
+            if self.screenshot_frames == 35 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            }
+            let mut captured = None;
+            ctx.input(|i| {
+                for ev in &i.raw.events {
+                    if let egui::Event::Screenshot { image, .. } = ev {
+                        captured = Some(image.clone());
+                    }
+                }
+            });
+            if let Some(img) = captured {
+                let w = img.width() as u32;
+                let h = img.height() as u32;
+                let pixel_bytes = w * h * 4;
+                let file_size = 54 + pixel_bytes;
+                let mut bmp = Vec::with_capacity(file_size as usize);
+                // BMP header (14 bytes)
+                bmp.extend_from_slice(b"BM");
+                bmp.extend_from_slice(&file_size.to_le_bytes());
+                bmp.extend_from_slice(&0u32.to_le_bytes());
+                bmp.extend_from_slice(&54u32.to_le_bytes());
+                // DIB header (40 bytes)
+                bmp.extend_from_slice(&40u32.to_le_bytes());
+                bmp.extend_from_slice(&(w as i32).to_le_bytes());
+                bmp.extend_from_slice(&(-(h as i32)).to_le_bytes()); // top-down
+                bmp.extend_from_slice(&1u16.to_le_bytes());
+                bmp.extend_from_slice(&32u16.to_le_bytes());
+                bmp.extend_from_slice(&0u32.to_le_bytes());
+                bmp.extend_from_slice(&pixel_bytes.to_le_bytes());
+                bmp.extend_from_slice(&0i32.to_le_bytes());
+                bmp.extend_from_slice(&0i32.to_le_bytes());
+                bmp.extend_from_slice(&0u32.to_le_bytes());
+                bmp.extend_from_slice(&0u32.to_le_bytes());
+                for c in &img.pixels {
+                    bmp.extend_from_slice(&[c.b(), c.g(), c.r(), c.a()]);
+                }
+                let _ = std::fs::write(shot_path, bmp);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 
