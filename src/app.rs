@@ -19,6 +19,7 @@ pub struct WinampApp {
     pub remaining_time_mode: bool,
     pub marquee_offset: f32,
     pub selected_playlist_idx: Option<usize>,
+    pub playlist_scroll: usize,
     pub eq_preset_name: String,
     last_save: std::time::Instant,
 }
@@ -85,6 +86,7 @@ impl WinampApp {
             remaining_time_mode,
             marquee_offset: 0.0,
             selected_playlist_idx,
+            playlist_scroll: 0,
             eq_preset_name,
             last_save: std::time::Instant::now(),
         }
@@ -1225,13 +1227,38 @@ impl WinampApp {
         let mut remove_track_idx = None;
 
         let row_h = 16.0;
-        let visible_rows = (list_rect.height() / row_h).floor() as usize;
+        let visible_rows = ((list_rect.height() - 4.0) / row_h).floor().max(1.0) as usize;
+        let total_rows = self.engine.playlist.len();
+        let max_scroll = total_rows.saturating_sub(visible_rows);
+        self.playlist_scroll = self.playlist_scroll.min(max_scroll);
 
-        for (idx, track) in self.engine.playlist.iter().enumerate().take(visible_rows) {
-            let row_y = list_rect.min.y + idx as f32 * row_h;
+        // Mouse wheel scrolling over the playlist area
+        let scroll_delta = ui.input(|i| {
+            if i.pointer
+                .hover_pos()
+                .map(|p| list_rect.contains(p))
+                .unwrap_or(false)
+            {
+                i.raw_scroll_delta.y
+            } else {
+                0.0
+            }
+        });
+        if scroll_delta > 0.0 {
+            self.playlist_scroll = self.playlist_scroll.saturating_sub(1);
+        } else if scroll_delta < 0.0 {
+            self.playlist_scroll = (self.playlist_scroll + 1).min(max_scroll);
+        }
+
+        let scrollbar_w = 12.0;
+        let rows_w = list_rect.width() - scrollbar_w - 6.0;
+
+        for (view_i, idx) in (self.playlist_scroll..total_rows).take(visible_rows).enumerate() {
+            let track = &self.engine.playlist[idx];
+            let row_y = list_rect.min.y + 2.0 + view_i as f32 * row_h;
             let row_rect = Rect::from_min_size(
                 Pos2::new(list_rect.min.x + 2.0, row_y),
-                Vec2::new(list_rect.width() - 4.0, row_h),
+                Vec2::new(rows_w, row_h),
             );
 
             let is_current = self.engine.current_index == Some(idx);
@@ -1249,8 +1276,19 @@ impl WinampApp {
                 Color32::from_rgb(160, 175, 190)
             };
 
-            let title_display = format!("{}. {}", idx + 1, track.title);
-            let duration_str = format!("{:02}:{:02}", (track.duration_secs as u32) / 60, (track.duration_secs as u32) % 60);
+            let duration_str = format!(
+                "{:02}:{:02}",
+                (track.duration_secs as u32) / 60,
+                (track.duration_secs as u32) % 60
+            );
+            let max_title_chars = ((rows_w - 52.0) / 5.8).max(8.0) as usize;
+            let raw_title = format!("{}. {}", idx + 1, track.title);
+            let title_display = if raw_title.chars().count() > max_title_chars {
+                let clipped: String = raw_title.chars().take(max_title_chars.saturating_sub(2)).collect();
+                format!("{}..", clipped)
+            } else {
+                raw_title
+            };
 
             // Title
             painter.text(
@@ -1263,19 +1301,64 @@ impl WinampApp {
 
             // Duration right aligned
             painter.text(
-                row_rect.right_top() - Vec2::new(8.0, -2.0),
+                row_rect.right_top() - Vec2::new(6.0, -2.0),
                 Align2::RIGHT_TOP,
                 duration_str,
                 FontId::monospace(9.5),
                 text_color,
             );
 
-            let resp = ui.interact(row_rect, Id::new(format!("pl_row_{}", idx)), Sense::click());
+            let resp = ui.interact(row_rect, Id::new(format!("pl_row_{}", view_i)), Sense::click());
             if resp.clicked() {
                 self.selected_playlist_idx = Some(idx);
             }
             if resp.double_clicked() {
                 play_track_idx = Some(idx);
+            }
+        }
+
+        // Classic Winamp Vertical Scrollbar
+        let sb_rect = Rect::from_min_size(
+            Pos2::new(list_rect.max.x - scrollbar_w - 2.0, list_rect.min.y + 2.0),
+            Vec2::new(scrollbar_w, list_rect.height() - 4.0),
+        );
+        painter.rect_filled(sb_rect, 0.0, Color32::from_rgb(16, 18, 22));
+        draw_bevel(&painter, sb_rect, true);
+
+        let thumb_h = if total_rows <= visible_rows || total_rows == 0 {
+            sb_rect.height() - 2.0
+        } else {
+            ((visible_rows as f32 / total_rows as f32) * (sb_rect.height() - 2.0)).clamp(16.0, sb_rect.height() - 2.0)
+        };
+        let scroll_frac = if max_scroll > 0 {
+            self.playlist_scroll as f32 / max_scroll as f32
+        } else {
+            0.0
+        };
+        let travel = (sb_rect.height() - 2.0 - thumb_h).max(0.0);
+        let thumb_y = sb_rect.min.y + 1.0 + scroll_frac * travel;
+        let sb_thumb = Rect::from_min_size(
+            Pos2::new(sb_rect.min.x + 1.0, thumb_y),
+            Vec2::new(sb_rect.width() - 2.0, thumb_h),
+        );
+        painter.rect_filled(
+            sb_thumb,
+            0.5,
+            if max_scroll > 0 {
+                COLOR_PANEL
+            } else {
+                Color32::from_rgb(32, 34, 40)
+            },
+        );
+        draw_bevel(&painter, sb_thumb, false);
+
+        if max_scroll > 0 {
+            let sb_resp = ui.interact(sb_rect, Id::new("pl_scrollbar"), Sense::click_and_drag());
+            if sb_resp.clicked() || sb_resp.dragged() {
+                if let Some(pos) = sb_resp.interact_pointer_pos() {
+                    let click_frac = ((pos.y - sb_rect.min.y - thumb_h * 0.5) / travel.max(1.0)).clamp(0.0, 1.0);
+                    self.playlist_scroll = (click_frac * max_scroll as f32).round() as usize;
+                }
             }
         }
 
