@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use serde::{Deserialize, Serialize};
 
 use crate::biquad::BiquadFilter;
 use crate::visualizer::VisualizerData;
@@ -13,7 +14,7 @@ pub const EQ_FREQUENCIES: [f32; 10] = [
     60.0, 170.0, 310.0, 600.0, 1000.0, 3000.0, 6000.0, 12000.0, 14000.0, 16000.0,
 ];
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Track {
     pub title: String,
     pub path: Option<PathBuf>,

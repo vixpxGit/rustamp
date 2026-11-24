@@ -4,6 +4,7 @@ use eframe::egui::{
 
 use crate::audio::{AudioEngine, PlaybackState};
 use crate::skin::*;
+use crate::storage::{self, PersistedState};
 use crate::visualizer::{VisMode, VisualizerState, NUM_BANDS};
 
 pub struct WinampApp {
@@ -19,28 +20,101 @@ pub struct WinampApp {
     pub marquee_offset: f32,
     pub selected_playlist_idx: Option<usize>,
     pub eq_preset_name: String,
+    last_save: std::time::Instant,
 }
 
 impl WinampApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let engine = AudioEngine::new();
+        let mut engine = AudioEngine::new();
         let vis_data = std::sync::Arc::clone(&engine.vis_data);
-        let visualizer = VisualizerState::new(vis_data);
+        let mut visualizer = VisualizerState::new(vis_data);
+
+        let mut show_eq = true;
+        let mut show_playlist = true;
+        let mut windowshade = false;
+        let mut remaining_time_mode = false;
+        let mut eq_preset_name = "Flat".to_string();
+        let mut selected_playlist_idx = Some(0);
+
+        if let Some(saved) = storage::load_state() {
+            engine.set_volume(saved.volume);
+            engine.set_balance(saved.balance);
+            engine.shuffle = saved.shuffle;
+            engine.repeat = saved.repeat;
+
+            show_eq = saved.show_eq;
+            show_playlist = saved.show_playlist;
+            windowshade = saved.windowshade;
+            remaining_time_mode = saved.remaining_time_mode;
+            visualizer.mode = saved.vis_mode;
+            eq_preset_name = saved.eq_preset_name;
+
+            if let Ok(mut eq) = engine.eq_state.lock() {
+                eq.enabled = saved.eq_enabled;
+                eq.preamp_db = saved.eq_preamp_db;
+                eq.bands_db = saved.eq_bands_db;
+            }
+
+            // Restore saved playlist (keep demo tracks and existing files)
+            let valid_tracks: Vec<_> = saved
+                .playlist
+                .into_iter()
+                .filter(|t| t.is_demo || t.path.as_ref().map(|p| p.exists()).unwrap_or(false))
+                .collect();
+
+            if !valid_tracks.is_empty() {
+                engine.playlist = valid_tracks;
+                let idx = saved
+                    .current_index
+                    .filter(|&i| i < engine.playlist.len())
+                    .or(Some(0));
+                engine.current_index = idx;
+                selected_playlist_idx = idx;
+            }
+        }
 
         Self {
             engine,
             visualizer,
-            show_eq: true,
-            show_playlist: true,
+            show_eq,
+            show_playlist,
             show_vis_window: false,
             vis_fullscreen: false,
             last_vis_fullscreen: false,
-            windowshade: false,
-            remaining_time_mode: false,
+            windowshade,
+            remaining_time_mode,
             marquee_offset: 0.0,
-            selected_playlist_idx: Some(0),
-            eq_preset_name: "Flat".to_string(),
+            selected_playlist_idx,
+            eq_preset_name,
+            last_save: std::time::Instant::now(),
         }
+    }
+
+    pub fn save_persisted_state(&self) {
+        let (eq_enabled, eq_preamp_db, eq_bands_db) = if let Ok(eq) = self.engine.eq_state.lock() {
+            (eq.enabled, eq.preamp_db, eq.bands_db)
+        } else {
+            (true, 0.0, [0.0; 10])
+        };
+
+        let state = PersistedState {
+            volume: self.engine.volume,
+            balance: self.engine.balance,
+            shuffle: self.engine.shuffle,
+            repeat: self.engine.repeat,
+            show_eq: self.show_eq,
+            show_playlist: self.show_playlist,
+            windowshade: self.windowshade,
+            remaining_time_mode: self.remaining_time_mode,
+            vis_mode: self.visualizer.mode,
+            eq_enabled,
+            eq_preamp_db,
+            eq_bands_db,
+            eq_preset_name: self.eq_preset_name.clone(),
+            playlist: self.engine.playlist.clone(),
+            current_index: self.engine.current_index,
+        };
+        storage::save_state(&state);
     }
 
     pub fn apply_eq_preset(&mut self, preset_name: &str) {
@@ -180,6 +254,16 @@ impl eframe::App for WinampApp {
         if self.show_vis_window {
             self.render_vis_window(ctx);
         }
+
+        // Periodically persist settings & playlist every 3 seconds
+        if self.last_save.elapsed().as_secs() >= 3 {
+            self.save_persisted_state();
+            self.last_save = std::time::Instant::now();
+        }
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_persisted_state();
     }
 }
 

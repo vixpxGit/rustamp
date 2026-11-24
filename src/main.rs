@@ -5,6 +5,7 @@ mod audio;
 mod biquad;
 mod icon;
 mod skin;
+mod storage;
 mod visualizer;
 
 use app::WinampApp;

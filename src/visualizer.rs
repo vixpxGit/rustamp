@@ -1,11 +1,12 @@
 use rustfft::{num_complex::Complex, FftPlanner};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 pub const NUM_BANDS: usize = 19;
 pub const BUFFER_SIZE: usize = 1024;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum VisMode {
     Spectrum,
     Oscilloscope,
