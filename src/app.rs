@@ -11,6 +11,9 @@ pub struct WinampApp {
     pub visualizer: VisualizerState,
     pub show_eq: bool,
     pub show_playlist: bool,
+    pub show_vis_window: bool,
+    pub vis_fullscreen: bool,
+    last_vis_fullscreen: bool,
     pub windowshade: bool,
     pub remaining_time_mode: bool,
     pub marquee_offset: f32,
@@ -29,6 +32,9 @@ impl WinampApp {
             visualizer,
             show_eq: true,
             show_playlist: true,
+            show_vis_window: false,
+            vis_fullscreen: false,
+            last_vis_fullscreen: false,
             windowshade: false,
             remaining_time_mode: false,
             marquee_offset: 0.0,
@@ -169,6 +175,11 @@ impl eframe::App for WinampApp {
                     self.render_playlist_window(ui);
                 }
             });
+
+        // 4. SEPARATE LARGE / FULLSCREEN VISUALIZER WINDOW
+        if self.show_vis_window {
+            self.render_vis_window(ctx);
+        }
     }
 }
 
@@ -398,55 +409,92 @@ impl WinampApp {
         painter.rect_filled(rect, 0.0, Color32::from_rgb(5, 7, 5));
         draw_bevel(painter, rect, true);
 
-        // Click to toggle visualizer mode
+        // Single click cycles mode; double click pops out into a separate large visualizer window
         let resp = ui.interact(rect, Id::new("vis_click"), Sense::click());
-        if resp.clicked() {
+        if resp.double_clicked() {
+            if self.visualizer.mode == VisMode::Off {
+                self.visualizer.mode = VisMode::Spectrum;
+            }
+            self.show_vis_window = true;
+            self.vis_fullscreen = false;
+        } else if resp.clicked() {
             self.visualizer.cycle_mode();
+        }
+
+        self.draw_visualizer_canvas(painter, rect, false);
+    }
+
+    fn draw_visualizer_canvas(&self, painter: &Painter, rect: Rect, large_mode: bool) {
+        if large_mode {
+            // Subtle CRT grid lines for the big visualizer window
+            let grid_col = Color32::from_rgb(14, 24, 14);
+            let cols = 12;
+            let rows = 8;
+            for c in 1..cols {
+                let x = rect.min.x + rect.width() * (c as f32 / cols as f32);
+                painter.line_segment(
+                    [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
+                    Stroke::new(1.0_f32, grid_col),
+                );
+            }
+            for r in 1..rows {
+                let y = rect.min.y + rect.height() * (r as f32 / rows as f32);
+                painter.line_segment(
+                    [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
+                    Stroke::new(1.0_f32, grid_col),
+                );
+            }
         }
 
         match self.visualizer.mode {
             VisMode::Spectrum => {
                 let bar_count = NUM_BANDS;
-                let spacing = 1.0;
-                let bar_w = ((rect.width() - 4.0 - (bar_count as f32 - 1.0) * spacing) / bar_count as f32).max(2.0);
-                let max_h = rect.height() - 6.0;
+                let pad_x = if large_mode { 16.0 } else { 2.0 };
+                let pad_y = if large_mode { 16.0 } else { 3.0 };
+                let spacing = if large_mode { 6.0 } else { 1.0 };
+                let bar_w = ((rect.width() - pad_x * 2.0 - (bar_count as f32 - 1.0) * spacing)
+                    / bar_count as f32)
+                    .max(2.0);
+                let max_h = (rect.height() - pad_y * 2.0).max(8.0);
+                let num_blocks: usize = if large_mode { 28 } else { 14 };
+                let block_gap = if large_mode { 2.0 } else { 1.0 };
 
                 for i in 0..bar_count {
                     let val = self.visualizer.bands[i].clamp(0.0, 1.0);
-                    let _bar_h = (val * max_h).round();
-                    let x = rect.min.x + 2.0 + i as f32 * (bar_w + spacing);
+                    let x = rect.min.x + pad_x + i as f32 * (bar_w + spacing);
 
-                    // Draw 16 segmented blocks per bar with classic color transition
-                    let num_blocks = 14;
                     let block_h = max_h / num_blocks as f32;
                     let active_blocks = ((val * num_blocks as f32).ceil() as usize).min(num_blocks);
 
+                    let green_limit = (num_blocks * 9) / 14;
+                    let yellow_limit = (num_blocks * 12) / 14;
+
                     for b in 0..active_blocks {
-                        let block_y = rect.max.y - 3.0 - (b as f32 + 1.0) * block_h;
+                        let block_y = rect.max.y - pad_y - (b as f32 + 1.0) * block_h;
                         let b_rect = Rect::from_min_size(
                             Pos2::new(x, block_y),
-                            Vec2::new(bar_w, block_h - 1.0),
+                            Vec2::new(bar_w, (block_h - block_gap).max(1.0)),
                         );
 
-                        let col = if b < 9 {
-                            COLOR_LED_GREEN // Bottom: Green
-                        } else if b < 12 {
-                            COLOR_LED_YELLOW // Middle: Yellow
+                        let col = if b < green_limit {
+                            COLOR_LED_GREEN
+                        } else if b < yellow_limit {
+                            COLOR_LED_YELLOW
                         } else {
-                            COLOR_LED_RED // Top: Red
+                            COLOR_LED_RED
                         };
                         painter.rect_filled(b_rect, 0.0, col);
                     }
 
-                    // Falling peak dot
+                    // Falling peak cap
                     let peak_val = self.visualizer.peaks[i].clamp(0.0, 1.0);
                     if peak_val > 0.05 {
-                        let peak_y = rect.max.y - 3.0 - (peak_val * max_h);
+                        let peak_y = rect.max.y - pad_y - (peak_val * max_h);
                         let p_rect = Rect::from_min_size(
                             Pos2::new(x, peak_y),
-                            Vec2::new(bar_w, 1.5),
+                            Vec2::new(bar_w, if large_mode { 4.0 } else { 1.5 }),
                         );
-                        painter.rect_filled(p_rect, 0.0, Color32::from_rgb(150, 255, 200));
+                        painter.rect_filled(p_rect, 0.0, Color32::from_rgb(160, 255, 210));
                     }
                 }
             }
@@ -454,24 +502,35 @@ impl WinampApp {
                 let samples = &self.visualizer.osc_samples;
                 if samples.len() > 10 {
                     let mid_y = rect.center().y;
-                    let step = rect.width() / 64.0;
-                    let stride = (samples.len() / 64).max(1);
+                    let num_pts = if large_mode { 192 } else { 64 };
+                    let step = rect.width() / num_pts as f32;
+                    let stride = (samples.len() / num_pts).max(1);
+                    let amp = rect.height() * 0.42;
 
-                    for i in 0..63 {
+                    for i in 0..(num_pts - 1) {
                         let s1 = samples.get(i * stride).copied().unwrap_or(0.0);
                         let s2 = samples.get((i + 1) * stride).copied().unwrap_or(0.0);
 
-                        let p1 = Pos2::new(rect.min.x + i as f32 * step, mid_y - s1 * (rect.height() * 0.42));
-                        let p2 = Pos2::new(rect.min.x + (i + 1) as f32 * step, mid_y - s2 * (rect.height() * 0.42));
+                        let p1 = Pos2::new(rect.min.x + i as f32 * step, mid_y - s1 * amp);
+                        let p2 = Pos2::new(rect.min.x + (i + 1) as f32 * step, mid_y - s2 * amp);
 
-                        painter.line_segment([p1, p2], Stroke::new(1.2_f32, COLOR_LED_GREEN));
+                        if large_mode {
+                            // Subtle phosphor outer glow
+                            painter.line_segment(
+                                [p1, p2],
+                                Stroke::new(5.0_f32, Color32::from_rgba_unmultiplied(0, 235, 30, 45)),
+                            );
+                        }
+                        painter.line_segment(
+                            [p1, p2],
+                            Stroke::new(if large_mode { 2.2_f32 } else { 1.2_f32 }, COLOR_LED_GREEN),
+                        );
                     }
                 } else {
-                    // Center idle line
                     let mid_y = rect.center().y;
                     painter.line_segment(
                         [Pos2::new(rect.min.x + 2.0, mid_y), Pos2::new(rect.max.x - 2.0, mid_y)],
-                        Stroke::new(1.0_f32, COLOR_LED_DIM_GREEN),
+                        Stroke::new(if large_mode { 2.0_f32 } else { 1.0_f32 }, COLOR_LED_DIM_GREEN),
                     );
                 }
             }
@@ -480,11 +539,110 @@ impl WinampApp {
                     rect.center(),
                     Align2::CENTER_CENTER,
                     "OFF",
-                    FontId::monospace(9.0),
+                    FontId::monospace(if large_mode { 18.0 } else { 9.0 }),
                     COLOR_LED_DIM_GREEN,
                 );
             }
         }
+    }
+
+    fn render_vis_window(&mut self, ctx: &egui::Context) {
+        let vis_id = egui::ViewportId::from_hash_of("winampr_vis_window");
+        let builder = egui::ViewportBuilder::default()
+            .with_title("WinampR Visualizer (Double-click for Fullscreen)")
+            .with_inner_size(Vec2::new(760.0, 440.0))
+            .with_min_inner_size(Vec2::new(320.0, 200.0))
+            .with_icon(std::sync::Arc::new(crate::icon::build_window_icon()));
+
+        ctx.show_viewport_immediate(vis_id, builder, |vis_ctx, _class| {
+            vis_ctx.request_repaint();
+
+            if vis_ctx.input(|i| i.viewport().close_requested()) {
+                self.show_vis_window = false;
+                self.vis_fullscreen = false;
+                self.last_vis_fullscreen = false;
+                return;
+            }
+
+            if vis_ctx.input(|i| i.key_pressed(Key::Escape)) {
+                if self.vis_fullscreen {
+                    self.vis_fullscreen = false;
+                } else {
+                    self.show_vis_window = false;
+                    return;
+                }
+            }
+
+            if vis_ctx.input(|i| i.key_pressed(Key::M)) {
+                self.visualizer.mode = match self.visualizer.mode {
+                    VisMode::Spectrum => VisMode::Oscilloscope,
+                    VisMode::Oscilloscope => VisMode::Spectrum,
+                    VisMode::Off => VisMode::Spectrum,
+                };
+            }
+
+            if self.vis_fullscreen != self.last_vis_fullscreen {
+                vis_ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.vis_fullscreen));
+                self.last_vis_fullscreen = self.vis_fullscreen;
+            }
+
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none().fill(Color32::from_rgb(5, 7, 5)))
+                .show(vis_ctx, |ui| {
+                    let full_rect = ui.max_rect();
+                    let painter = ui.painter_at(full_rect);
+
+                    self.draw_visualizer_canvas(&painter, full_rect, true);
+
+                    // Subtle HUD overlay: track info (top-left) and hint (top-right)
+                    let track_label = self
+                        .engine
+                        .current_index
+                        .and_then(|idx| self.engine.playlist.get(idx))
+                        .map(|t| {
+                            let secs = self.engine.elapsed_secs as u32;
+                            format!("{}  [{:02}:{:02}]", t.title, secs / 60, secs % 60)
+                        })
+                        .unwrap_or_else(|| "WINAMP R VISUALIZER".to_string());
+
+                    painter.text(
+                        full_rect.min + Vec2::new(14.0, 12.0),
+                        Align2::LEFT_TOP,
+                        track_label,
+                        FontId::monospace(12.0),
+                        Color32::from_rgba_unmultiplied(0, 235, 30, 180),
+                    );
+
+                    let mode_name = match self.visualizer.mode {
+                        VisMode::Spectrum => "SPECTRUM",
+                        VisMode::Oscilloscope => "OSCILLOSCOPE",
+                        VisMode::Off => "OFF",
+                    };
+                    let hint = if self.vis_fullscreen {
+                        format!("{}  |  DBL-CLICK / ESC: EXIT FULLSCREEN  |  R-CLICK: MODE", mode_name)
+                    } else {
+                        format!("{}  |  DBL-CLICK: FULLSCREEN  |  R-CLICK: MODE", mode_name)
+                    };
+                    painter.text(
+                        Pos2::new(full_rect.max.x - 14.0, full_rect.min.y + 12.0),
+                        Align2::RIGHT_TOP,
+                        hint,
+                        FontId::monospace(10.5),
+                        Color32::from_rgba_unmultiplied(130, 165, 135, 170),
+                    );
+
+                    let resp = ui.interact(full_rect, Id::new("vis_win_interact"), Sense::click());
+                    if resp.double_clicked() {
+                        self.vis_fullscreen = !self.vis_fullscreen;
+                    } else if resp.secondary_clicked() {
+                        self.visualizer.mode = match self.visualizer.mode {
+                            VisMode::Spectrum => VisMode::Oscilloscope,
+                            VisMode::Oscilloscope => VisMode::Spectrum,
+                            VisMode::Off => VisMode::Spectrum,
+                        };
+                    }
+                });
+        });
     }
 
     // ==========================================
@@ -608,10 +766,17 @@ impl WinampApp {
     // BALANCE SLIDER
     // ==========================================
     fn render_balance_slider(&mut self, ui: &mut Ui, painter: &Painter, rect: Rect) {
+        let bal_label = if self.engine.balance.abs() < 0.01 {
+            "BAL: CENTER".to_string()
+        } else if self.engine.balance < 0.0 {
+            format!("BAL: L {:2}%", (-self.engine.balance * 100.0).round() as u32)
+        } else {
+            format!("BAL: R {:2}%", (self.engine.balance * 100.0).round() as u32)
+        };
         painter.text(
             rect.min - Vec2::new(0.0, 10.0),
             Align2::LEFT_TOP,
-            "BAL: L-0-R",
+            bal_label,
             FontId::monospace(8.5),
             COLOR_TEXT_DIM,
         );

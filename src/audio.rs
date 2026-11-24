@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
@@ -57,6 +58,7 @@ pub struct AudioEngine {
     pub state: PlaybackState,
     pub volume: f32,
     pub balance: f32,
+    balance_bits: Arc<AtomicU32>,
     pub elapsed_secs: f32,
     pub shuffle: bool,
     pub repeat: bool,
@@ -88,6 +90,7 @@ impl AudioEngine {
             state: PlaybackState::Stopped,
             volume: 0.8,
             balance: 0.0,
+            balance_bits: Arc::new(AtomicU32::new(0.0f32.to_bits())),
             elapsed_secs: 0.0,
             shuffle: false,
             repeat: false,
@@ -263,6 +266,8 @@ impl AudioEngine {
 
     pub fn set_balance(&mut self, bal: f32) {
         self.balance = bal.clamp(-1.0, 1.0);
+        self.balance_bits
+            .store(self.balance.to_bits(), Ordering::Relaxed);
     }
 
     pub fn update(&mut self) {
@@ -315,13 +320,13 @@ impl AudioEngine {
         let track = &mut self.playlist[idx];
         let vis_clone = Arc::clone(&self.vis_data);
         let eq_clone = Arc::clone(&self.eq_state);
-        let balance = self.balance;
+        let balance_bits = Arc::clone(&self.balance_bits);
 
         if track.is_demo {
             // Demo chiptune synthesizer
             let demo_type = idx % 2;
             let synth = WinampDemoSource::new(demo_type, track.duration_secs, start_offset);
-            let processed = ProcessedSource::new(synth, vis_clone, eq_clone, balance);
+            let processed = ProcessedSource::new(synth, vis_clone, eq_clone, balance_bits);
             sink.append(processed);
         } else if let Some(ref path) = track.path {
             match File::open(path) {
@@ -350,7 +355,7 @@ impl AudioEngine {
                                 source_box,
                                 vis_clone,
                                 eq_clone,
-                                balance,
+                                balance_bits,
                             );
                             sink.append(processed);
                         }
@@ -403,7 +408,7 @@ pub struct ProcessedSource<S> {
     vis_data: Arc<Mutex<VisualizerData>>,
     eq_state: Arc<Mutex<EqualizerState>>,
     filters: Vec<BiquadFilter>,
-    balance: f32,
+    balance_bits: Arc<AtomicU32>,
     channel_toggle: usize,
     sample_rate: u32,
     channels: u16,
@@ -417,7 +422,7 @@ where
         inner: S,
         vis_data: Arc<Mutex<VisualizerData>>,
         eq_state: Arc<Mutex<EqualizerState>>,
-        balance: f32,
+        balance_bits: Arc<AtomicU32>,
     ) -> Self {
         let sample_rate = inner.sample_rate();
         let channels = inner.channels();
@@ -432,7 +437,7 @@ where
             vis_data,
             eq_state,
             filters,
-            balance,
+            balance_bits,
             channel_toggle: 0,
             sample_rate,
             channels,
@@ -472,21 +477,22 @@ where
             }
         }
 
-        // Apply Balance
-        if self.channels == 2 {
-            if ch == 0 && self.balance > 0.0 {
-                // Left channel attenuated when balance is to right
-                sample *= 1.0 - self.balance;
-            } else if ch == 1 && self.balance < 0.0 {
-                // Right channel attenuated when balance is to left
-                sample *= 1.0 + self.balance;
-            }
-        }
-
-        // Push to visualizer buffer (mono mix or left channel)
+        // Push to visualizer buffer (pre-balance so panning hard right/left keeps visualizer active)
         if ch == 0 {
             if let Ok(mut vis) = self.vis_data.try_lock() {
                 vis.push_sample(sample);
+            }
+        }
+
+        // Apply Balance in real time
+        let balance = f32::from_bits(self.balance_bits.load(Ordering::Relaxed));
+        if self.channels == 2 {
+            if ch == 0 && balance > 0.0 {
+                // Left channel attenuated when balance is to right
+                sample *= 1.0 - balance;
+            } else if ch == 1 && balance < 0.0 {
+                // Right channel attenuated when balance is to left
+                sample *= 1.0 + balance;
             }
         }
 
