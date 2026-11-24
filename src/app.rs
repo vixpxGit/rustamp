@@ -320,19 +320,57 @@ impl WinampApp {
             Stroke::new(1.0_f32, COLOR_TITLE_GRADIENT_END),
         );
 
-        // Winamp lightning icon
-        let icon_pos = rect.min + Vec2::new(4.0, 2.0);
+        // WinampR W/R + Electric Lightning Bolt badge
+        let badge_rect = Rect::from_min_size(rect.min + Vec2::new(3.0, 1.5), Vec2::new(22.0, 13.0));
+        painter.rect_filled(badge_rect, 2.0, Color32::from_rgb(18, 22, 30));
+        painter.rect_stroke(
+            badge_rect,
+            2.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(220, 175, 45)),
+        );
+        // 'W' on left
         painter.text(
-            icon_pos,
-            Align2::LEFT_TOP,
-            "⚡",
-            FontId::monospace(11.0),
-            Color32::from_rgb(255, 220, 50),
+            Pos2::new(badge_rect.min.x + 2.0, badge_rect.center().y),
+            Align2::LEFT_CENTER,
+            "W",
+            FontId::monospace(8.5),
+            Color32::from_rgb(235, 240, 250),
+        );
+        // Electric lightning bolt in center (two crisp convex triangles)
+        let bx = badge_rect.center().x;
+        let by = badge_rect.min.y + 1.5;
+        let bh = badge_rect.height() - 3.0;
+        let bolt_color = Color32::from_rgb(255, 215, 40);
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                Pos2::new(bx + 1.4, by),
+                Pos2::new(bx - 2.3, by + bh * 0.54),
+                Pos2::new(bx + 0.7, by + bh * 0.48),
+            ],
+            bolt_color,
+            Stroke::NONE,
+        ));
+        painter.add(egui::Shape::convex_polygon(
+            vec![
+                Pos2::new(bx - 0.3, by + bh * 0.44),
+                Pos2::new(bx + 2.4, by + bh * 0.44),
+                Pos2::new(bx - 1.3, by + bh),
+            ],
+            bolt_color,
+            Stroke::NONE,
+        ));
+        // 'R' on right
+        painter.text(
+            Pos2::new(badge_rect.max.x - 1.5, badge_rect.center().y),
+            Align2::RIGHT_CENTER,
+            "R",
+            FontId::monospace(8.5),
+            COLOR_LED_GREEN,
         );
 
         // Title text
         painter.text(
-            icon_pos + Vec2::new(14.0, 0.0),
+            Pos2::new(badge_rect.max.x + 5.0, rect.min.y + 2.0),
             Align2::LEFT_TOP,
             title,
             FontId::proportional(11.0),
