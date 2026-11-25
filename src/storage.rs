@@ -49,15 +49,19 @@ impl Default for PersistedState {
 
 pub fn state_file_path() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata).join("WinampR").join("state.json")
+        PathBuf::from(appdata).join("RustAmp").join("state.json")
     } else {
-        PathBuf::from("winampr_state.json")
+        PathBuf::from("rustamp_state.json")
     }
 }
 
 pub fn load_state() -> Option<PersistedState> {
     let path = state_file_path();
-    let contents = fs::read_to_string(&path).ok()?;
+    let contents = fs::read_to_string(&path).ok().or_else(|| {
+        std::env::var("APPDATA")
+            .ok()
+            .and_then(|a| fs::read_to_string(PathBuf::from(a).join("WinampR").join("state.json")).ok())
+    })?;
     serde_json::from_str(&contents).ok()
 }
 

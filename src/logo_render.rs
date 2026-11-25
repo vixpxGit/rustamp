@@ -54,45 +54,36 @@ fn dist_to_poly_edges(px: f32, py: f32, poly: &[(f32, f32)]) -> f32 {
     min_d
 }
 
-/// Renders the WinampR (W / Lightning / R) logo into an RGBA buffer of `size x size`.
+/// Renders the RustAmp (R + Lightning Bolt) logo into an RGBA buffer of `size x size`.
 pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
     let mut rgba = vec![0u8; (size * size * 4) as usize];
     let s = size as f32;
 
-    // Normalized coordinate space [0.0, 1.0]
     let radius = 0.16;
     let margin = 0.04;
 
-    // Electric lightning bolt polygon (normalized [0..1])
+    // Electric lightning bolt polygon (right half, normalized [0..1])
     let bolt: [(f32, f32); 7] = [
-        (0.56, 0.08),
-        (0.36, 0.48),
-        (0.50, 0.48),
-        (0.40, 0.92),
-        (0.67, 0.43),
-        (0.52, 0.43),
-        (0.64, 0.08),
+        (0.71, 0.11),
+        (0.51, 0.51),
+        (0.65, 0.51),
+        (0.55, 0.89),
+        (0.84, 0.45),
+        (0.68, 0.45),
+        (0.80, 0.11),
     ];
 
-    // Letter 'W' segments (left side, normalized)
-    let w_segs: [((f32, f32), (f32, f32)); 4] = [
-        ((0.12, 0.24), (0.18, 0.72)),
-        ((0.18, 0.72), (0.25, 0.44)),
-        ((0.25, 0.44), (0.32, 0.72)),
-        ((0.32, 0.72), (0.38, 0.24)),
-    ];
-
-    // Letter 'R' segments + leg (right side, normalized)
+    // Bold 'R' on the left side
     let r_segs: [((f32, f32), (f32, f32)); 5] = [
-        ((0.66, 0.24), (0.66, 0.74)), // vertical stem
-        ((0.66, 0.24), (0.82, 0.24)), // top bar
-        ((0.82, 0.24), (0.86, 0.36)), // upper right curve
-        ((0.86, 0.36), (0.80, 0.48)), // lower loop return
-        ((0.66, 0.48), (0.80, 0.48)), // mid bar
+        ((0.20, 0.22), (0.20, 0.78)), // vertical stem
+        ((0.20, 0.22), (0.40, 0.22)), // top bar
+        ((0.40, 0.22), (0.45, 0.35)), // upper right curve
+        ((0.45, 0.35), (0.39, 0.49)), // lower loop return
+        ((0.20, 0.49), (0.39, 0.49)), // mid bar
     ];
-    let r_leg: ((f32, f32), (f32, f32)) = ((0.74, 0.48), (0.87, 0.74));
+    let r_leg: ((f32, f32), (f32, f32)) = ((0.30, 0.49), (0.46, 0.78));
 
-    let stroke_r = 0.042;
+    let stroke_r = 0.052;
     let aa = 1.2 / s;
 
     for y in 0..size {
@@ -102,7 +93,6 @@ pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
             let idx = ((y * size + x) * 4) as usize;
             let px = &mut rgba[idx..idx + 4];
 
-            // Rounded-rect SDF for badge background
             let rx = (nx - 0.5).abs() - (0.5 - margin - radius);
             let ry = (ny - 0.5).abs() - (0.5 - margin - radius);
             let outside = (rx.max(0.0).powi(2) + ry.max(0.0).powi(2)).sqrt()
@@ -131,42 +121,18 @@ pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
                 blend_pixel(px, br, bg, bb, bg_alpha * 0.9);
             }
 
-            // Subtle dark inner LCD glow in center
+            // Subtle phosphor green glow in center
             let center_dist = ((nx - 0.5).powi(2) + (ny - 0.5).powi(2)).sqrt();
             if center_dist < 0.36 {
                 let glow = (1.0 - center_dist / 0.36) * 0.28;
                 blend_pixel(px, 0, 180, 40, glow);
             }
 
-            // Draw 'W' (silver-white with dark shadow)
-            let mut min_w = f32::MAX;
-            let mut min_w_shadow = f32::MAX;
-            for &(a, b) in &w_segs {
-                min_w = min_w.min(dist_to_segment(nx, ny, a.0, a.1, b.0, b.1));
-                min_w_shadow = min_w_shadow.min(dist_to_segment(
-                    nx - 0.015,
-                    ny - 0.015,
-                    a.0,
-                    a.1,
-                    b.0,
-                    b.1,
-                ));
-            }
-            if min_w_shadow < stroke_r + aa {
-                let a = ((stroke_r + aa - min_w_shadow) / (2.0 * aa)).clamp(0.0, 1.0);
-                blend_pixel(px, 8, 10, 14, a * 0.75);
-            }
-            if min_w < stroke_r + aa {
-                let a = ((stroke_r + aa - min_w) / (2.0 * aa)).clamp(0.0, 1.0);
-                let shade = (245.0 - ny * 40.0) as u8;
-                blend_pixel(px, shade, shade, 255, a);
-            }
-
             // Draw 'R' (Winamp phosphor green with dark shadow)
             let mut min_r = dist_to_segment(nx, ny, r_leg.0 .0, r_leg.0 .1, r_leg.1 .0, r_leg.1 .1);
             let mut min_r_shadow = dist_to_segment(
-                nx - 0.015,
-                ny - 0.015,
+                nx - 0.016,
+                ny - 0.016,
                 r_leg.0 .0,
                 r_leg.0 .1,
                 r_leg.1 .0,
@@ -175,8 +141,8 @@ pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
             for &(a, b) in &r_segs {
                 min_r = min_r.min(dist_to_segment(nx, ny, a.0, a.1, b.0, b.1));
                 min_r_shadow = min_r_shadow.min(dist_to_segment(
-                    nx - 0.015,
-                    ny - 0.015,
+                    nx - 0.016,
+                    ny - 0.016,
                     a.0,
                     a.1,
                     b.0,
@@ -185,7 +151,7 @@ pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
             }
             if min_r_shadow < stroke_r + aa {
                 let a = ((stroke_r + aa - min_r_shadow) / (2.0 * aa)).clamp(0.0, 1.0);
-                blend_pixel(px, 8, 10, 14, a * 0.75);
+                blend_pixel(px, 8, 10, 14, a * 0.8);
             }
             if min_r < stroke_r + aa {
                 let a = ((stroke_r + aa - min_r) / (2.0 * aa)).clamp(0.0, 1.0);
@@ -193,11 +159,10 @@ pub fn render_winampr_rgba(size: u32) -> Vec<u8> {
                 blend_pixel(px, 25, g, 65, a);
             }
 
-            // Draw electric lightning bolt on top (gold -> fiery orange)
+            // Draw electric lightning bolt (gold -> fiery orange)
             let inside_bolt = point_in_poly(nx, ny, &bolt);
             let edge_d = dist_to_poly_edges(nx, ny, &bolt);
 
-            // Dark outline around bolt for contrast
             if !inside_bolt && edge_d < 0.022 + aa {
                 let a = ((0.022 + aa - edge_d) / (2.0 * aa)).clamp(0.0, 1.0);
                 blend_pixel(px, 15, 10, 5, a * 0.9);

@@ -33,14 +33,14 @@ fn main() -> eframe::Result<()> {
             .with_inner_size(initial_size)
             .with_min_inner_size(min_size)
             .with_max_inner_size(max_size)
-            .with_title("WinampR - It really whips the llama's ass!")
+            .with_title("RustAmp - Retro Audio Player")
             .with_icon(Arc::new(icon::build_window_icon()))
             .with_resizable(true),
         ..Default::default()
     };
 
     eframe::run_native(
-        "WinampR",
+        "RustAmp",
         options,
         Box::new(|cc| Ok(Box::new(WinampApp::new(cc)))),
     )

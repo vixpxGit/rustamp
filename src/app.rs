@@ -274,7 +274,7 @@ impl eframe::App for WinampApp {
                             let secs = self.engine.elapsed_secs as u32;
                             format!("{}  [{:02}:{:02}]", t.title, secs / 60, secs % 60)
                         })
-                        .unwrap_or_else(|| "WINAMP R VISUALIZER".to_string());
+                        .unwrap_or_else(|| "RUSTAMP VISUALIZER".to_string());
                     painter.text(
                         full_rect.min + Vec2::new(14.0, 12.0),
                         Align2::LEFT_TOP,
@@ -370,7 +370,7 @@ impl WinampApp {
 
         // Title Bar
         let title_rect = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(rect.width() - 4.0, 16.0));
-        self.render_titlebar(&painter, title_rect, "WINAMP", true);
+        self.render_titlebar(&painter, title_rect, "RUSTAMP", true);
 
         if self.windowshade {
             // Windowshade mode: Mini compact bar
@@ -500,24 +500,24 @@ impl WinampApp {
             Stroke::new(1.0_f32, COLOR_TITLE_GRADIENT_END),
         );
 
-        // WinampR W/R + Electric Lightning Bolt badge
-        let badge_rect = Rect::from_min_size(rect.min + Vec2::new(3.0, 1.5), Vec2::new(22.0, 13.0));
+        // RustAmp R + Electric Lightning Bolt badge
+        let badge_rect = Rect::from_min_size(rect.min + Vec2::new(3.0, 1.5), Vec2::new(20.0, 13.0));
         painter.rect_filled(badge_rect, 2.0, Color32::from_rgb(18, 22, 30));
         painter.rect_stroke(
             badge_rect,
             2.0,
             Stroke::new(1.0_f32, Color32::from_rgb(220, 175, 45)),
         );
-        // 'W' on left
+        // 'R' on left in phosphor green
         painter.text(
-            Pos2::new(badge_rect.min.x + 2.0, badge_rect.center().y),
+            Pos2::new(badge_rect.min.x + 2.5, badge_rect.center().y),
             Align2::LEFT_CENTER,
-            "W",
-            FontId::monospace(8.5),
-            Color32::from_rgb(235, 240, 250),
+            "R",
+            FontId::monospace(9.0),
+            COLOR_LED_GREEN,
         );
-        // Electric lightning bolt in center (two crisp convex triangles)
-        let bx = badge_rect.center().x;
+        // Electric lightning bolt on right (two crisp convex triangles)
+        let bx = badge_rect.max.x - 6.0;
         let by = badge_rect.min.y + 1.5;
         let bh = badge_rect.height() - 3.0;
         let bolt_color = Color32::from_rgb(255, 215, 40);
@@ -539,14 +539,6 @@ impl WinampApp {
             bolt_color,
             Stroke::NONE,
         ));
-        // 'R' on right
-        painter.text(
-            Pos2::new(badge_rect.max.x - 1.5, badge_rect.center().y),
-            Align2::RIGHT_CENTER,
-            "R",
-            FontId::monospace(8.5),
-            COLOR_LED_GREEN,
-        );
 
         // Title text
         painter.text(
@@ -716,9 +708,9 @@ impl WinampApp {
     }
 
     fn render_vis_window(&mut self, ctx: &egui::Context) {
-        let vis_id = egui::ViewportId::from_hash_of("winampr_vis_window");
+        let vis_id = egui::ViewportId::from_hash_of("rustamp_vis_window");
         let builder = egui::ViewportBuilder::default()
-            .with_title("WinampR Visualizer (Double-click for Fullscreen)")
+            .with_title("RustAmp Visualizer (Double-click for Fullscreen)")
             .with_inner_size(Vec2::new(760.0, 440.0))
             .with_min_inner_size(Vec2::new(320.0, 200.0))
             .with_icon(std::sync::Arc::new(crate::icon::build_window_icon()));
@@ -772,7 +764,7 @@ impl WinampApp {
                             let secs = self.engine.elapsed_secs as u32;
                             format!("{}  [{:02}:{:02}]", t.title, secs / 60, secs % 60)
                         })
-                        .unwrap_or_else(|| "WINAMP R VISUALIZER".to_string());
+                        .unwrap_or_else(|| "RUSTAMP VISUALIZER".to_string());
 
                     painter.text(
                         full_rect.min + Vec2::new(14.0, 12.0),
@@ -824,8 +816,8 @@ impl WinampApp {
 
         let current_track = self.engine.current_index.and_then(|idx| self.engine.playlist.get(idx));
         let title = current_track
-            .map(|t| format!("{}. {} ({:02}:{:02}) *** WINAMP ***", self.engine.current_index.unwrap_or(0) + 1, t.title, (t.duration_secs as u32) / 60, (t.duration_secs as u32) % 60))
-            .unwrap_or_else(|| "WINAMP (PROUDLY IN RUST) - IT REALLY WHIPS THE LLAMA'S ASS ***".to_string());
+            .map(|t| format!("{}. {} ({:02}:{:02}) *** RUSTAMP ***", self.engine.current_index.unwrap_or(0) + 1, t.title, (t.duration_secs as u32) / 60, (t.duration_secs as u32) % 60))
+            .unwrap_or_else(|| "RUSTAMP - RETRO AUDIO PLAYER IN RUST ***".to_string());
 
         let font = FontId::monospace(10.0);
         let galley = clipped_painter.layout_no_wrap(title, font, COLOR_LED_GREEN);
@@ -1119,7 +1111,7 @@ impl WinampApp {
 
         // EQ Title bar
         let title_rect = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(rect.width() - 4.0, 16.0));
-        self.render_titlebar(&painter, title_rect, "WINAMP EQUALIZER", false);
+        self.render_titlebar(&painter, title_rect, "RUSTAMP EQUALIZER", false);
 
         // Fetch EQ state
         let (mut eq_enabled, mut preamp_db, mut bands_db) = if let Ok(eq) = self.engine.eq_state.lock() {
@@ -1293,7 +1285,7 @@ impl WinampApp {
 
         // Playlist Title bar
         let title_rect = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(rect.width() - 4.0, 16.0));
-        self.render_titlebar(&painter, title_rect, "WINAMP PLAYLIST", false);
+        self.render_titlebar(&painter, title_rect, "RUSTAMP PLAYLIST", false);
 
         // Playlist Table Area (LCD-style list, auto-expands with window height)
         let list_h = (rect.height() - 54.0).max(114.0);

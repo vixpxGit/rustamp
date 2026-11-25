@@ -106,7 +106,7 @@ impl AudioEngine {
 
     pub fn add_demo_tracks(&mut self) {
         self.playlist.push(Track {
-            title: "DJ Mike Llama - Llama Whippin' Intro".to_string(),
+            title: "RustAmp Synth - Retro FM Intro".to_string(),
             path: None,
             duration_secs: 18.0,
             sample_rate: 44100,
@@ -115,7 +115,7 @@ impl AudioEngine {
             is_demo: true,
         });
         self.playlist.push(Track {
-            title: "Nullsoft Sound Lab - 90s Neon Chiptune".to_string(),
+            title: "RustAmp Lab - 90s Neon Chiptune".to_string(),
             path: None,
             duration_secs: 32.0,
             sample_rate: 44100,
